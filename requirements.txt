@@ -1,3 +1,4 @@
 cython==3.0.10
 torchxrayvision==1.2.3
 scikit-learn==1.2.2
+monai==1.1.0
