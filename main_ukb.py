@@ -21,7 +21,9 @@ def main(args):
         dataset = NIH_Dataset(imgpath=args.dataset_path)
     elif args.dataset == "ukb":
         dataset = DexaDatasetUKB(
-            root=args.dataset_path, transform=transform_dexaukb_xrv
+            root=args.dataset_path,
+            transform=transform_dexaukb_xrv,
+            num_images=args.num_images,
         )
     else:
         raise ValueError(f"Dataset {args.dataset} not supported.")
@@ -46,7 +48,7 @@ def main(args):
 
     plot_clusters(args.output, embeddings_2d, kmeans.labels_)
     save_n_images_per_cluster(
-        args.output, image_paths, kmeans.labels_, images_per_cluster=10
+        args.output, image_paths, kmeans.labels_, images_per_cluster=100
     )
 
 
@@ -59,11 +61,15 @@ if __name__ == "__main__":
     parser.add_argument(
         "--dataset_path",
         # default="/data/home/xaw004/Dataset/NIH_CXR/images-224",
-        default="/data/Coding/ImageClusteringDEXA/DummyDataset",
+        # default="/data/Coding/ImageClusteringDEXA/DummyDataset",
+        default="/data/Coding/ImageClusteringDEXA/white_background_data/",
         type=str,
     )
     parser.add_argument("--output", default="./output", type=str)
     parser.add_argument("--use_cache", action="store_true")
     args = parser.parse_args()
+    if args.num_images is not None:
+        args.output = f"{args.output}_{args.num_images}images"
+    args.output = f"{args.output}_{args.num_clusters}clusters"
     os.makedirs(args.output, exist_ok=True)
     main(args)

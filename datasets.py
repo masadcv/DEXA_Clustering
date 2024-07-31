@@ -1,11 +1,14 @@
 import os
 import zipfile
 
+import numpy as np
+import torch
 import torchvision
 import torchxrayvision as xrv
 from monai.transforms import EnsureChannelFirst, LoadImage
 
 from transforms import ResizeWithPadding
+from utils import check_and_remove_white_background, lin_stretch_img
 
 transform_nih = torchvision.transforms.Compose(
     [
@@ -17,7 +20,7 @@ transform_nih = torchvision.transforms.Compose(
 
 transform_dexaukb_xrv = torchvision.transforms.Compose(
     [
-        EnsureChannelFirst(),
+        # EnsureChannelFirst(),
         ResizeWithPadding(224, 224),
         # normalize range from [0, 255] to [-1024, 1024]
         torchvision.transforms.Lambda(lambda x: unnormalize(x, 1024)),
@@ -46,39 +49,54 @@ class DexaDatasetUKB:
     def __init__(
         self,
         root,
+        working_dir="./data",
         dicom_str="11.12.1.dcm",
         remove_zip=False,
         remove_unused_dcm=True,
         transform=None,
+        num_images=None,
     ):
         self.root = root
         self.transform = transform
         self.dicom_str = dicom_str
+        self.extract_zip_files(
+            root, working_dir, remove_zip, ext=dicom_str, num_images=num_images
+        )
         self.dataset = self.load_dataset_paths(
-            root, dicom_str, remove_zip=remove_zip, remove_unused_dcm=remove_unused_dcm
+            root=working_dir, remove_unused_dcm=remove_unused_dcm, ext=dicom_str
         )
 
-    def load_dataset_paths(self, root, ext, remove_zip, remove_unused_dcm):
+    def extract_zip_files(self, root, working_dir, remove_zip, ext, num_images=None):
+        os.makedirs(working_dir, exist_ok=True)
         # recursively parse the root directory and sub directories and check for zip files
         # if zip files found, unzip them in the same directory
-        # then parse the directory for files with the extension
-        for root_local, _, files in os.walk(root):
+        count_images_extracted = 0
+        for root_local, dirs, files in os.walk(root):
             for file in files:
                 if file.endswith(".zip"):
-                    unzip_path = os.path.join(root_local, file.split(".zip")[0])
+                    unzip_path = os.path.join(
+                        working_dir, os.path.basename(root_local), file.split(".zip")[0]
+                    )
                     print("Found zip file: ", file)
                     # check if any file with the extension is already unzipped
                     # if yes, skip unzipping
-                    if any([f.endswith(ext) for f in os.listdir(unzip_path)]):
+                    if os.path.exists(unzip_path) and any(
+                        [f.endswith(ext) for f in os.listdir(unzip_path)]
+                    ):
                         print("Files already unzipped")
                         continue
                     print("Unzipping the file")
+                    count_images_extracted += 1
                     zip_path = os.path.join(root_local, file)
                     with zipfile.ZipFile(zip_path, "r") as zip_ref:
                         zip_ref.extractall(unzip_path)
                     if remove_zip:
                         os.remove(zip_path)
+                    if num_images is not None and count_images_extracted >= num_images:
+                        print("Number of images extracted reached the limit")
+                        return
 
+    def load_dataset_paths(self, root, remove_unused_dcm, ext):
         # recursively parse the root directory and sub directories for files with the extension
         dataset = []
         for root_local, _, files in os.walk(root):
@@ -99,6 +117,15 @@ class DexaDatasetUKB:
         # in DEXA full body scans largest dimension indicates the height of the patient
         if img.shape[0] < img.shape[1]:
             img = img.T
+
+        img_np = img.numpy().astype(np.uint8)
+        img_np = check_and_remove_white_background(img_np)
+
+        # linear stretch the image
+        img_np = lin_stretch_img(img_np, 0.1, 99.9)
+
+        img = torch.from_numpy(img_np).float().unsqueeze(0)
+
         if self.transform:
             img = self.transform(img)
         return dict(img=img, metadata=metadata, img_path=img_path)
