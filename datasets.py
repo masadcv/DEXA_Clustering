@@ -6,7 +6,9 @@ import torch
 import torchvision
 import torchxrayvision as xrv
 from monai.transforms import EnsureChannelFirst, LoadImage
+from PIL import Image
 
+import utils
 from transforms import ResizeWithPadding
 from utils import check_and_remove_white_background, lin_stretch_img
 
@@ -134,19 +136,73 @@ class DexaDatasetUKB:
         return len(self.dataset)
 
 
+class DexaDatasetImagesUKB:
+    def __init__(
+        self,
+        root,
+        ext="png",
+        transform=None,
+        num_images=None,
+    ):
+        self.root = root
+        self.transform = transform
+        self.ext = ext
+        self.dataset = self.load_dataset_paths(root=root, ext=ext)
+
+        if num_images is not None:
+            print(f"Limiting dataset to {num_images} images")
+            self.dataset = self.dataset[:num_images]
+
+    def load_dataset_paths(self, root, ext):
+        # recursively parse the root directory and sub directories for files with the extension
+        dataset = []
+        for root_local, _, files in os.walk(root):
+            for file in files:
+                if file.endswith(ext):
+                    dataset.append(os.path.join(root_local, file))
+        return dataset
+
+    def __getitem__(self, idx):
+        img_path = self.dataset[idx]
+        # img, metadata = LoadImage()(img_path)
+        img = np.asarray(Image.open(img_path))
+        metadata = utils.load_json(img_path.replace(".png", ".json"))
+
+        if img.ndim > 2:
+            img = img.squeeze()
+
+        img = torch.from_numpy(img).float().unsqueeze(0)
+
+        if self.transform:
+            img = self.transform(img)
+        return dict(img=img, metadata=metadata, img_path=img_path)
+
+    def __len__(self):
+        return len(self.dataset)
+
+
 if __name__ == "__main__":
-    dataset = DexaDatasetUKB(
-        root="/data/Coding/ImageClusteringDEXA/DummyDataset",
-        dicom_str="11.12.1.dcm",
-        transform=transform_dexaukb_xrv,
+    # dataset = DexaDatasetUKB(
+    #     root="/data/Coding/ImageClusteringDEXA/DummyDataset",
+    #     dicom_str="11.12.1.dcm",
+    #     transform=transform_dexaukb_xrv,
+    # )
+
+    # data = dataset[0]
+
+    # from matplotlib import pyplot as plt
+
+    # plt.imshow(data["image"][0], cmap="gray")
+    # plt.savefig("test.png")
+    # print(data["image"].shape)
+    # print(data["image"].min(), data["image"].max())
+    # print()
+
+    dataset = DexaDatasetImagesUKB(
+        root="/data/Coding/ImageClusteringDEXA/DEXA_Clustering/output_data",
+        ext="png",
+        transform=None,
     )
 
     data = dataset[0]
-
-    from matplotlib import pyplot as plt
-
-    plt.imshow(data["image"][0], cmap="gray")
-    plt.savefig("test.png")
-    print(data["image"].shape)
-    print(data["image"].min(), data["image"].max())
-    print()
+    

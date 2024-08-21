@@ -5,7 +5,7 @@ import numpy as np
 import torch
 
 from cluster import get_kmeans_clusters, get_tsne_embeddings
-from datasets import DexaDatasetUKB, NIH_Dataset, transform_dexaukb_xrv
+from datasets import DexaDatasetImagesUKB, NIH_Dataset, transform_dexaukb_xrv
 from embeddings import get_embeddings
 from model_zoo import model_name_to_func
 from utils import plot_clusters, save_n_images_per_cluster
@@ -20,7 +20,7 @@ def main(args):
     if args.dataset == "nih":
         dataset = NIH_Dataset(imgpath=args.dataset_path)
     elif args.dataset == "ukb":
-        dataset = DexaDatasetUKB(
+        dataset = DexaDatasetImagesUKB(
             root=args.dataset_path,
             transform=transform_dexaukb_xrv,
             num_images=args.num_images,

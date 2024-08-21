@@ -1,11 +1,14 @@
 import json
 import os
 import shutil
+import zipfile
 
 import cv2
 import matplotlib.pyplot as plt
 import numpy as np
+import torch
 from monai.transforms import LoadImage
+from PIL import Image
 
 
 def save_json(file_path, data):
@@ -18,6 +21,31 @@ def load_json(file_path):
     with open(file_path, "r") as f:
         data = json.load(f)
     return data
+
+
+def make_json_safe(data):
+    """
+    Recursively converts a Python dictionary into a JSON-safe dictionary.
+    Handles torch.Tensor and numpy.ndarray by converting them to lists or scalars.
+    """
+    if isinstance(data, dict):
+        return {str(k): make_json_safe(v) for k, v in data.items()}
+    elif isinstance(data, list):
+        return [make_json_safe(i) for i in data]
+    elif isinstance(data, set):
+        return [make_json_safe(i) for i in data]  # Convert sets to lists
+    elif isinstance(data, tuple):
+        return [make_json_safe(i) for i in data]  # Convert tuples to lists
+    elif isinstance(data, torch.Tensor):
+        return (
+            data.tolist() if data.ndim > 0 else data.item()
+        )  # Convert tensors to lists or scalars
+    elif isinstance(data, np.ndarray):
+        return data.tolist()  # Convert numpy arrays to lists
+    elif isinstance(data, (str, int, float, bool)) or data is None:
+        return data
+    else:
+        return str(data)  # Convert non-serializable objects to strings
 
 
 def plot_clusters(output, embeddings_2d, cluster_labels):
@@ -144,3 +172,86 @@ def lin_stretch_img(img, low_prc, high_prc, do_ignore_minmax=True):
         np.uint8
     )  # Clip range to [0, 255] and convert to uint8
     return stretch_img
+
+
+def extract_zip_files(root, working_dir, remove_zip, ext):
+    os.makedirs(working_dir, exist_ok=True)
+    # recursively parse the root directory and sub directories and check for zip files
+    # if zip files found, unzip them in the same directory
+    count_images_extracted = 0
+    for root_local, dirs, files in os.walk(root):
+        for file in files:
+            if file.endswith(".zip"):
+                unzip_path = os.path.join(
+                    working_dir, os.path.basename(root_local), file.split(".zip")[0]
+                )
+                print("Found zip file: ", file)
+                # check if any file with the extension is already unzipped
+                # if yes, skip unzipping
+                if os.path.exists(unzip_path) and any(
+                    [f.endswith(ext) for f in os.listdir(unzip_path)]
+                ):
+                    print("Files already unzipped")
+                    continue
+                print("Unzipping the file")
+                count_images_extracted += 1
+                zip_path = os.path.join(root_local, file)
+                with zipfile.ZipFile(zip_path, "r") as zip_ref:
+                    zip_ref.extractall(unzip_path)
+                if remove_zip:
+                    os.remove(zip_path)
+
+
+def load_dataset_paths(root, remove_unused_dcm, ext):
+    # recursively parse the root directory and sub directories for files with the extension
+    dataset = []
+    for root_local, _, files in os.walk(root):
+        for file in files:
+            if file.endswith(ext):
+                dataset.append(os.path.join(root_local, file))
+            else:
+                if remove_unused_dcm and file.endswith(".dcm"):
+                    os.remove(os.path.join(root_local, file))
+    return dataset
+
+
+def convert_dcm_to_images(input_folder, remove_dcm=True):
+    for root, _, files in os.walk(input_folder):
+        for file in files:
+            if file.endswith(".dcm"):
+                img, metadata = LoadImage()(os.path.join(root, file))
+                img = img.squeeze().numpy().astype(np.uint8)
+                img = check_and_remove_white_background(img)
+                img = lin_stretch_img(img, 0.1, 99.9)
+                # orient the image such that largest dimension is the height
+                # in DEXA full body scans largest dimension indicates the height of the patient
+                if img.shape[0] < img.shape[1]:
+                    img = img.T
+                metadata = make_json_safe(metadata)
+                metadata["file_name"] = file.replace(".dcm", ".png")
+                save_json(os.path.join(root, file.replace(".dcm", ".json")), metadata)
+                Image.fromarray(img).save(
+                    os.path.join(root, file.replace(".dcm", ".png"))
+                )
+                if remove_dcm:
+                    os.remove(os.path.join(root, file))
+
+
+def process_dexa_data_ukb(
+    input_folder,
+    output_folder,
+    dicom_str="11.12.1.dcm",
+    remove_zip=False,
+    remove_unused_dcm=True,
+):
+    extract_zip_files(input_folder, output_folder, remove_zip=remove_zip, ext=dicom_str)
+    load_dataset_paths(
+        output_folder, remove_unused_dcm=remove_unused_dcm, ext=dicom_str
+    )
+    convert_dcm_to_images(output_folder, remove_dcm=remove_unused_dcm)
+
+
+def make_tarball(input_folder, output_folder, tarball_name):
+    shutil.make_archive(
+        os.path.join(output_folder, tarball_name), "gztar", input_folder
+    )
