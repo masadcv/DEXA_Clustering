@@ -14,7 +14,7 @@ from PIL import Image
 def save_json(file_path, data):
     with open(file_path, "w") as f:
         json.dump(data, f, indent=4)
-    print(f"Saved data to {file_path}")
+    # print(f"Saved data to {file_path}")
 
 
 def load_json(file_path):
@@ -174,7 +174,7 @@ def lin_stretch_img(img, low_prc, high_prc, do_ignore_minmax=True):
     return stretch_img
 
 
-def extract_zip_files(root, working_dir, remove_zip, ext):
+def extract_zip_files(root, working_dir, remove_zip, exts):
     os.makedirs(working_dir, exist_ok=True)
     # recursively parse the root directory and sub directories and check for zip files
     # if zip files found, unzip them in the same directory
@@ -186,10 +186,10 @@ def extract_zip_files(root, working_dir, remove_zip, ext):
                     working_dir, os.path.basename(root_local), file.split(".zip")[0]
                 )
                 print("Found zip file: ", file)
-                # check if any file with the extension is already unzipped
+                # check if any file with the extensions are already unzipped
                 # if yes, skip unzipping
                 if os.path.exists(unzip_path) and any(
-                    [f.endswith(ext) for f in os.listdir(unzip_path)]
+                    [f.endswith(ext) for ext in exts for f in os.listdir(unzip_path)]
                 ):
                     print("Files already unzipped")
                     continue
@@ -202,12 +202,12 @@ def extract_zip_files(root, working_dir, remove_zip, ext):
                     os.remove(zip_path)
 
 
-def load_dataset_paths(root, remove_unused_dcm, ext):
+def load_dataset_paths(root, remove_unused_dcm, exts):
     # recursively parse the root directory and sub directories for files with the extension
     dataset = []
     for root_local, _, files in os.walk(root):
         for file in files:
-            if file.endswith(ext):
+            if any([file.endswith(ext) for ext in exts]):
                 dataset.append(os.path.join(root_local, file))
             else:
                 if remove_unused_dcm and file.endswith(".dcm"):
@@ -222,7 +222,7 @@ def convert_dcm_to_images(input_folder, remove_dcm=True):
                 img, metadata = LoadImage()(os.path.join(root, file))
                 img = img.squeeze().numpy().astype(np.uint8)
                 img = check_and_remove_white_background(img)
-                img = lin_stretch_img(img, 0.1, 99.9)
+                # img = lin_stretch_img(img, 0.1, 99.9)
                 # orient the image such that largest dimension is the height
                 # in DEXA full body scans largest dimension indicates the height of the patient
                 if img.shape[0] < img.shape[1]:
@@ -240,13 +240,13 @@ def convert_dcm_to_images(input_folder, remove_dcm=True):
 def process_dexa_data_ukb(
     input_folder,
     output_folder,
-    dicom_str="11.12.1.dcm",
+    dicom_str_list=["11.12.1.dcm", "12.12.1.dcm"],
     remove_zip=False,
     remove_unused_dcm=True,
 ):
-    extract_zip_files(input_folder, output_folder, remove_zip=remove_zip, ext=dicom_str)
+    extract_zip_files(input_folder, output_folder, remove_zip=remove_zip, exts=dicom_str_list)
     load_dataset_paths(
-        output_folder, remove_unused_dcm=remove_unused_dcm, ext=dicom_str
+        output_folder, remove_unused_dcm=remove_unused_dcm, exts=dicom_str_list
     )
     convert_dcm_to_images(output_folder, remove_dcm=remove_unused_dcm)
 

@@ -9,6 +9,7 @@ if __name__ == "__main__":
     # store true
     parser.add_argument("--remove_zip", action="store_true")
     parser.add_argument("--remove_unused_dcm", action="store_true")
+    parser.add_argument("--tarball_name", default="output", type=str)
     args = parser.parse_args()
     print("Processing DEXA data UKB")
     utils.process_dexa_data_ukb(
@@ -19,5 +20,5 @@ if __name__ == "__main__":
     )
     print("Processing completed")
     print("Creating tarball")
-    utils.make_tarball(args.output, args.output, "output")
+    utils.make_tarball(args.output, args.output, args.tarball_name)
     print("Tarball created")
